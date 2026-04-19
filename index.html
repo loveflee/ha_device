@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>devices.json 節點生成器</title>
+    <style>
+        :root { --bg: #1e1e1e; --panel: #2d2d2d; --text: #d4d4d4; --accent: #007acc; --border: #404040; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; max-width: 900px; margin: 0 auto; display: flex; gap: 20px; }
+        .form-panel, .output-panel { background: var(--panel); padding: 20px; border-radius: 8px; border: 1px solid var(--border); flex: 1; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 0.9em; font-weight: bold; color: #9cdcfe; }
+        input, select { width: 100%; padding: 8px; background: #3c3c3c; border: 1px solid var(--border); color: #fff; border-radius: 4px; box-sizing: border-box; }
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
+        .influx-section { border-left: 3px solid #c586c0; padding-left: 15px; margin-top: 15px; display: none; }
+        .influx-section.active { display: block; }
+        .checkbox-group { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+        .checkbox-group input { width: auto; }
+        pre { background: #1e1e1e; padding: 15px; border-radius: 4px; overflow-x: auto; border: 1px solid var(--border); color: #ce9178; }
+        button { background: var(--accent); color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
+        button:hover { background: #005999; }
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+    </style>
+</head>
+<body>
+
+    <div class="form-panel">
+        <div class="form-group">
+            <label>顯示名稱 (Key, 例: 5樓溫度)</label>
+            <input type="text" id="nodeName" oninput="generateJSON()" placeholder="輸入名稱...">
+        </div>
+        
+        <div class="row">
+            <div class="form-group">
+                <label>Entity ID (id)</label>
+                <input type="text" id="entityId" oninput="generateJSON()" placeholder="sensor.xxx">
+            </div>
+            <div class="form-group">
+                <label>Domain</label>
+                <select id="domain" onchange="handleDomainChange()">
+                    <option value="switch">switch (控制)</option>
+                    <option value="sensor">sensor (感測器)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select id="type" onchange="generateJSON()">
+                    <option value="control">control</option>
+                    <option value="sensor">sensor</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Aliases (別名，用逗號分隔)</label>
+            <input type="text" id="aliases" oninput="generateJSON()" placeholder="別名1, 別名2, 別名3">
+        </div>
+
+        <div class="checkbox-group" id="influxToggleWrapper" style="display: none;">
+            <input type="checkbox" id="enableInflux" onchange="toggleInflux()">
+            <label for="enableInflux" style="margin: 0; color: #c586c0;">啟用 InfluxDB 配置</label>
+        </div>
+
+        <div class="influx-section" id="influxSection">
+            <div class="row">
+                <div class="form-group">
+                    <label>Measurement</label>
+                    <input type="text" id="inf_measurement" value="irongate" oninput="generateJSON()" list="measurement-options">
+                    <datalist id="measurement-options">
+                        <option value="irongate"></option>
+                        <option value="power_meter"></option>
+                    </datalist>
+                </div>
+                <div class="form-group">
+                    <label>Field</label>
+                    <input type="text" id="inf_field" value="temperature" oninput="generateJSON()">
+                </div>
+            </div>
+            <div class="row">
+                <div class="form-group">
+                    <label>Tag Key</label>
+                    <input type="text" id="inf_tag_key" value="device" oninput="generateJSON()">
+                </div>
+                <div class="form-group">
+                    <label>Tag Value</label>
+                    <input type="text" id="inf_tag_val" oninput="generateJSON()" placeholder="對應硬體ID">
+                </div>
+            </div>
+            <div class="row">
+                <div class="form-group">
+                    <label>Calc Mode</label>
+                    <select id="inf_calc_mode" onchange="generateJSON()">
+                        <option value="aggregate">aggregate (狀態聚合，如溫濕度)</option>
+                        <option value="increase">increase (累加計算，如電表度數)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>單位 (Unit)</label>
+                    <input type="text" id="inf_unit" value="°C" oninput="generateJSON()">
+                </div>
+                <div class="form-group">
+                    <label>圖表名稱 (Name)</label>
+                    <input type="text" id="inf_name" value="溫度" oninput="generateJSON()">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="output-panel">
+        <button onclick="copyJSON()">複製 JSON 區塊</button>
+        <pre id="jsonOutput">{}</pre>
+    </div>
+
+    <script>
+        function handleDomainChange() {
+            const domain = document.getElementById('domain').value;
+            const typeSelect = document.getElementById('type');
+            const influxToggleWrapper = document.getElementById('influxToggleWrapper');
+            const enableInflux = document.getElementById('enableInflux');
+            const influxSection = document.getElementById('influxSection');
+
+            if (domain === 'sensor') {
+                typeSelect.value = 'sensor';
+                influxToggleWrapper.style.display = 'flex';
+            } else {
+                typeSelect.value = 'control';
+                influxToggleWrapper.style.display = 'none';
+                enableInflux.checked = false;
+                influxSection.classList.remove('active');
+            }
+            generateJSON();
+        }
+
+        function toggleInflux() {
+            const isChecked = document.getElementById('enableInflux').checked;
+            document.getElementById('influxSection').classList.toggle('active', isChecked);
+            generateJSON();
+        }
+
+        function generateJSON() {
+            const nodeName = document.getElementById('nodeName').value.trim() || "新節點";
+            const aliasesRaw = document.getElementById('aliases').value;
+            
+            const obj = {
+                id: document.getElementById('entityId').value.trim(),
+                domain: document.getElementById('domain').value,
+                type: document.getElementById('type').value
+            };
+
+            if (aliasesRaw.trim()) {
+                obj.alias = aliasesRaw.split(/[,，]/).map(s => s.trim()).filter(s => s);
+            }
+
+            if (document.getElementById('enableInflux').checked) {
+                obj.influx = {
+                    measurement: document.getElementById('inf_measurement').value.trim(),
+                    tag_key: document.getElementById('inf_tag_key').value.trim(),
+                    tag_val: document.getElementById('inf_tag_val').value.trim(),
+                    field: document.getElementById('inf_field').value.trim(),
+                    calc_mode: document.getElementById('inf_calc_mode').value,
+                    unit: document.getElementById('inf_unit').value.trim(),
+                    name: document.getElementById('inf_name').value.trim()
+                };
+            }
+
+            const finalOutput = `"${nodeName}": ${JSON.stringify(obj, null, 2)}`;
+            document.getElementById('jsonOutput').textContent = finalOutput;
+        }
+
+        function copyJSON() {
+            const text = document.getElementById('jsonOutput').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('button');
+                btn.textContent = "已複製！";
+                btn.style.background = "#4CAF50";
+                setTimeout(() => {
+                    btn.textContent = "複製 JSON 區塊";
+                    btn.style.background = "var(--accent)";
+                }, 1500);
+            });
+        }
+        
+        // Init
+        handleDomainChange();
+    </script>
+</body>
+</html>
